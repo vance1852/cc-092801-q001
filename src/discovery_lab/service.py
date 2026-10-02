@@ -368,6 +368,18 @@ class TaxonomyLabService:
         now = self._now()
         expires = isoformat(self.clock.now() + timedelta(seconds=lease_seconds))
         with transaction(self.connection, immediate=True):
+            # 领取会赋予后续证据录入与结论提交资格，因此操作者身份、账户启用状态与
+            # 分析角色权限必须在领取事务内、改动任务前确认；任一失败整体回滚，
+            # 任务状态、领取人、租约与审计链均保持不变。
+            worker = self.connection.execute(
+                "SELECT user_id, role, active FROM users WHERE user_id=?", (worker_id,)
+            ).fetchone()
+            if worker is None:
+                raise NotFound(f"用户不存在: {worker_id}")
+            if not worker["active"]:
+                raise Forbidden("用户已停用")
+            if "analysis.run" not in ROLE_PERMISSIONS.get(worker["role"], frozenset()):
+                raise Forbidden(f"角色 {worker['role']} 无权执行 analysis.run")
             row = self.connection.execute(
                 "SELECT job_id FROM analysis_jobs WHERE "
                 "(state='queued' AND available_at<=?) OR (state='leased' AND lease_expires_at<=?) "

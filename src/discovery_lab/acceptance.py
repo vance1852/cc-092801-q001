@@ -38,10 +38,10 @@ def run(workspace: Path) -> dict[str, object]:
                 "operator-1", "batch-demo", "demo-import-1", evidence_item_rows
             )
             service.seal_batch("stat-1", "batch-demo", 2)
-            job = service.claim_job("worker-1", lease_seconds=60)
+            job = service.claim_job("stat-1", lease_seconds=60)
             if job is None:
                 raise RuntimeError("未能领取分析任务")
-            analysis = service.complete_job("worker-1", job["job_id"], "stat-1")
+            analysis = service.complete_job("stat-1", job["job_id"], "stat-1")
             decision_value = "approved" if analysis["result"]["conclusion"] == "pass" else "rejected"
             service.decide(
                 "approver-1", "batch-demo", analysis["analysis_id"], decision_value, "离线验收决定"
