@@ -368,6 +368,7 @@ class TaxonomyLabService:
         now = self._now()
         expires = isoformat(self.clock.now() + timedelta(seconds=lease_seconds))
         with transaction(self.connection, immediate=True):
+            self._require(worker_id, "analysis.run")
             row = self.connection.execute(
                 "SELECT job_id FROM analysis_jobs WHERE "
                 "(state='queued' AND available_at<=?) OR (state='leased' AND lease_expires_at<=?) "
@@ -376,11 +377,13 @@ class TaxonomyLabService:
             ).fetchone()
             if row is None:
                 return None
-            self.connection.execute(
+            cursor = self.connection.execute(
                 "UPDATE analysis_jobs SET state='leased',attempts=attempts+1,lease_owner=?,lease_expires_at=?,updated_at=? "
-                "WHERE job_id=?",
-                (worker_id, expires, now, row["job_id"]),
+                "WHERE job_id=? AND ((state='queued' AND available_at<=?) OR (state='leased' AND lease_expires_at<=?))",
+                (worker_id, expires, now, row["job_id"], now, now),
             )
+            if cursor.rowcount != 1:
+                raise Conflict("分析任务已被其他请求领取")
             claimed = self.connection.execute("SELECT * FROM analysis_jobs WHERE job_id=?", (row["job_id"],)).fetchone()
         return dict(claimed)
 
